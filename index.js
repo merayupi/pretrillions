@@ -14,7 +14,7 @@ const header = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:142.0) Gecko/20100101 Firefox/142.0",
         "Accept": "*/*",
         "Accept-Language": "en-US,en;q=0.5",
-        'Authorization': `Bearer ${process.env.AUTH}`,
+        'Authorization': `Bearer ${process.env.AUTH_TOKEN}`,
         "Content-Type": "application/json",
         "Sec-GPC": "1",
         "Sec-Fetch-Dest": "empty",
@@ -25,8 +25,22 @@ const header = {
 };
 const BASE_URL = "https://www.pretrillions.com/api";
 
-if (!process.env.AUTH) {
+if (!process.env.AUTH_TOKEN) {
     console.warn('Peringatan: ENV AUTH tidak terdeteksi. Set AUTH=BearerToken anda di file .env agar request ke API berhasil.');
+}
+
+const getCleanErrorMessage = (error) => {
+    if (error?.response?.data?.data?.error) {
+        return error.response.data.data.error;
+    } else if (error?.response?.data?.error) {
+        return error.response.data.error;
+    } else if (error?.response?.data?.message) {
+        return error.response.data.message;
+    } else if (error?.message) {
+        return error.message;
+    } else {
+        return 'Unknown error occurred';
+    }
 }
 
 const checkCredits = async () => {
@@ -73,8 +87,9 @@ const generateImage = async (prompts) => {
         const response = await axios.post(`${BASE_URL}/generate-random`, body, header);
         return response.data;
     } catch (error) {
-        console.error("Error generating image:", error);
-        throw error;
+        const errorMsg = getCleanErrorMessage(error);
+        console.error(`❌ Generate image error: ${errorMsg}`);
+        throw new Error(errorMsg);
     }
 }
 
@@ -86,8 +101,9 @@ const mintImage = async (imageId, userID) => {
         }, header);
         return response.data;
     } catch (error) {
-        console.error("Error minting image:", error);
-        throw error;
+        const errorMsg = getCleanErrorMessage(error);
+        console.error(`❌ Mint image error: ${errorMsg}`);
+        throw new Error(errorMsg);
     }
 }
 
@@ -101,8 +117,9 @@ const processingMint = async (mintID, status = 'processing', transactionHash) =>
 
         return response.data;
     } catch (error) {
-        console.error("Error confirming mint:", error);
-        throw error;
+        const errorMsg = getCleanErrorMessage(error);
+        console.error(`❌ Processing mint error: ${errorMsg}`);
+        throw new Error(errorMsg);
     }
 }
 const confirmMint = async (mintID, status = 'confirmed', tokenID, transactionHash) => {
@@ -116,8 +133,9 @@ const confirmMint = async (mintID, status = 'confirmed', tokenID, transactionHas
 
         return response.data;
     } catch (error) {
-        console.error("Error confirming mint:", error);
-        throw error;
+        const errorMsg = getCleanErrorMessage(error);
+        console.error(`❌ Confirm mint error: ${errorMsg}`);
+        throw new Error(errorMsg);
     }
 }
 
@@ -232,8 +250,9 @@ const mintNFT = async (wallet, tokenURI) => {
             tokenId: tokenId
         };
     } catch (error) {
-        console.error("Error minting NFT:", error);
-        throw error;
+        const errorMsg = getCleanErrorMessage(error);
+        console.error(`❌ Blockchain mint error: ${errorMsg}`);
+        throw new Error(errorMsg);
     }
 }
 
@@ -329,7 +348,9 @@ const handleImageGeneration = async (user, wallet) => {
         }
 
     } catch (error) {
-        console.error('Error in image generation:', error);
+        twisters.remove('generate');
+        const errorMsg = getCleanErrorMessage(error);
+        console.error(`❌ ${errorMsg}`);
         return false; // Failed
     }
 }
@@ -360,7 +381,8 @@ const handleMinting = async (imageId, userId, wallet, user) => {
         await updateUserInfo(user, wallet);
 
     } catch (error) {
-        console.error('Error in minting process:', error);
+        const errorMsg = getCleanErrorMessage(error);
+        console.error(`❌ ${errorMsg}`);
     }
 }
 
