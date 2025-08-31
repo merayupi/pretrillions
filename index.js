@@ -7,14 +7,21 @@ import readline from 'readline';
 
 const twisters = new Twisters();
 
+const spinnerStart = (id, text) => twisters.put(id, { text, active: true });
+const spinnerUpdate = (id, text) => twisters.put(id, { text, active: true });
+const spinnerSucceed = (id, text) => twisters.put(id, { text: `✔ ${text}`, active: false });
+const spinnerFail = (id, text) => twisters.put(id, { text: `✖ ${text}`, active: false });
+
 const privateKey = process.env.PRIVATE_KEY;
 const rpcUrl = process.env.RPC_URL;
+const AUTH = process.env.AUTH_TOKEN;
 const header = {
     headers: {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:142.0) Gecko/20100101 Firefox/142.0",
         "Accept": "*/*",
         "Accept-Language": "en-US,en;q=0.5",
-        'Authorization': `Bearer ${process.env.AUTH_TOKEN}`,
+        'Authorization': `Bearer ${AUTH}`,
+        "Cookie": `privy-session=t; privy-token=${AUTH}`,
         "Content-Type": "application/json",
         "Sec-GPC": "1",
         "Sec-Fetch-Dest": "empty",
@@ -25,8 +32,8 @@ const header = {
 };
 const BASE_URL = "https://www.pretrillions.com/api";
 
-if (!process.env.AUTH_TOKEN) {
-    console.warn('Peringatan: ENV AUTH tidak terdeteksi. Set AUTH=BearerToken anda di file .env agar request ke API berhasil.');
+if (!AUTH) {
+    console.warn('Peringatan: ENV AUTH/AUTH_TOKEN tidak terdeteksi. Set AUTH atau AUTH_TOKEN=BearerToken anda di file .env agar request ke API berhasil.');
 }
 
 const getCleanErrorMessage = (error) => {
@@ -141,7 +148,8 @@ const confirmMint = async (mintID, status = 'confirmed', tokenID, transactionHas
 
 const mintNFT = async (wallet, tokenURI) => {
     try {
-        const contractAddress = "0xBc7892318a7943f8f40C6d2F35eBB083397bf727";
+        const contractAddress = "0xC5c28aA8DA13588CBf8B23D9c57FB2DA98aebcE0";
+        const TRANSFER_TOPIC = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef';
 
         const abi = [
             {
@@ -190,68 +198,28 @@ const mintNFT = async (wallet, tokenURI) => {
         ];
 
         const contract = new ethers.Contract(contractAddress, abi, wallet);
-        console.log('🔄 Sending mint transaction...');
         const tx = await contract.mintPlasmaGirl(wallet.address, tokenURI);
-        console.log(`📋 Transaction sent: ${tx.hash}`);
-        console.log('⏳ Waiting for confirmation...');
         const receipt = await tx.wait();
-        console.log(`✅ Transaction confirmed in block ${receipt.blockNumber}`);
-        console.log(`📊 Total logs found: ${receipt.logs.length}`);
 
-        let tokenId = null;
-        if (receipt.logs && receipt.logs.length > 0) {
-            for (const log of receipt.logs) {
-                try {
-                    const parsedLog = contract.interface.parseLog(log);
-                    if (parsedLog.name === 'Transfer' && parsedLog.args.from === ethers.ZeroAddress) {
-                        tokenId = parsedLog.args.tokenId.toString();
-                        console.log(`🎯 Found Token ID from Transfer event: ${tokenId}`);
-                        break;
-                    }
-                } catch (error) {
-                    continue;
-                }
-            }
+        const transferLog =
+            receipt.logs.find(l =>
+                (l.fragment?.name === "Transfer") ||
+                (l.topics?.[0] === TRANSFER_TOPIC)
+            );
+
+        if (!transferLog) {
+            throw new Error("Transfer event tidak ditemukan di receipt.");
         }
 
-        if (!tokenId) {
-            console.log('⚠️ Token ID not found in Transfer event, checking all logs...');
-            for (const log of receipt.logs) {
-                if (log.topics && log.topics.length >= 4) {
-                    try {
-                        const potentialTokenId = BigInt(log.topics[3]).toString();
-                        if (potentialTokenId && potentialTokenId !== '0') {
-                            tokenId = potentialTokenId;
-                            console.log(`🎯 Found Token ID from log topics: ${tokenId}`);
-                            break;
-                        }
-                    } catch (error) {
-                        try {
-                            const potentialTokenId = ethers.BigNumber.from(log.topics[3]).toString();
-                            if (potentialTokenId && potentialTokenId !== '0') {
-                                tokenId = potentialTokenId;
-                                console.log(`🎯 Found Token ID from log topics (fallback): ${tokenId}`);
-                                break;
-                            }
-                        } catch (fallbackError) {
-                            continue;
-                        }
-                    }
-                }
-            }
-        }
-
-        if (!tokenId) {
-            console.log('❌ Could not extract Token ID from transaction logs');
-        }
+        const tokenIdBigInt = transferLog.args?.tokenId ?? transferLog.args?.[2];
+        const formatTokenID = Number(tokenIdBigInt);
 
         return {
             hash: tx.hash,
-            tokenId: tokenId
+            tokenId: formatTokenID
         };
     } catch (error) {
         const errorMsg = getCleanErrorMessage(error);
-        console.error(`❌ Blockchain mint error: ${errorMsg}`);
         throw new Error(errorMsg);
     }
 }
@@ -316,73 +284,42 @@ const getUserInput = (question) => {
 
 const handleImageGeneration = async (user, wallet) => {
     try {
-        console.log('\n=== IMAGE GENERATION ===');
+        spinnerStart('gen', 'Generating image...');
+        const generatedImage = await generateImage();
+        spinnerSucceed('gen', `Image generated (ID: ${generatedImage.imageId})`);
 
-        // const userPrompt = await getUserInput('Masukkan prompt untuk generate gambar (tekan Enter untuk random): ');
+        spinnerStart('mint-init', 'Preparing mint...');
+        const mintData = await mintImage(generatedImage.imageId, user.privy_user_id);
+        spinnerSucceed('mint-init', `Mint prepared (Mint ID: ${mintData.mintId})`);
 
-        twisters.put('generate', {
-            text: 'Generating image...'
-        });
+        spinnerStart('chain', 'Minting on blockchain...');
+        const mintResult = await mintNFT(wallet, mintData.metadataUri);
+        spinnerSucceed('chain', `Minted on-chain (tx: ${mintResult.hash.slice(0, 10)}...)`);
 
-        let generateData;
-        console.log('🎲 Generating random image...');
-        generateData = await generateImage();
-        // if (userPrompt === '' || userPrompt.length === 0) {
-        // } else {
-        //     console.log(`🎨 Generating image with prompt: "${userPrompt}"`);
-        //     generateData = await generateImage(userPrompt);
-        // }
+        spinnerStart('api-processing', 'Setting status to processing...');
+        await processingMint(mintData.mintId, 'processing', mintResult.hash);
+        spinnerSucceed('api-processing', 'Status set to processing');
 
-        twisters.remove('generate');
-
-        if (generateData && generateData.imageId) {
-            console.log(`✅ Image generated successfully!`);
-            console.log(`Image ID: ${generateData.imageId}`);
-            console.log(`Image URL: ${generateData.imageUrl || 'URL not available'}`);
-
-            await handleMinting(generateData.imageId, user.privy_user_id, wallet, user);
-            return true; // Success
+        if (mintResult.tokenId) {
+            spinnerStart('api-confirm', `Confirming mint (tokenId: ${Number(mintResult.tokenId)})...`);
+            await confirmMint(mintData.mintId, 'confirmed', Number(mintResult.tokenId), mintResult.hash);
+            spinnerSucceed('api-confirm', `Mint confirmed (tokenId: ${Number(mintResult.tokenId)})`);
         } else {
-            console.log('❌ Failed to generate image');
-            return false; // Failed
+            spinnerFail('api-confirm', 'Token ID not found - skipped confirmation');
         }
 
-    } catch (error) {
-        twisters.remove('generate');
-        const errorMsg = getCleanErrorMessage(error);
-        console.error(`❌ ${errorMsg}`);
-        return false; // Failed
-    }
-}
-
-const handleMinting = async (imageId, userId, wallet, user) => {
-    try {
-        console.log('\n=== NFT MINTING ===');
-        console.log('🔄 Starting mint process...');
-
-        const mintData = await mintImage(imageId, userId);
-        const mintId = mintData.mintId;
-
-        console.log(`Mint ID: ${mintId}`);
-        console.log('✅ Mint request created! Proceeding with blockchain transaction...');
-
-        const mintResult = await mintNFT(wallet, mintData.metadataUri);
-        console.log(`🔗 Transaction Hash: ${mintResult.hash}`);
-        console.log(`🎫 Token ID: ${mintResult.tokenId}`);
-
-        console.log('🔄 Setting mint status to processing...');
-        await processingMint(mintId, 'processing', mintResult.hash);
-
-        const confirmResult = await confirmMint(mintId, 'confirmed', Number(mintResult.tokenId), mintResult.hash);
-        console.log('✅ NFT minting completed successfully!');
-        console.log(`Transaction: ${mintResult.hash}`);
-        console.log(`Token ID: ${mintResult.tokenId}`);
-
         await updateUserInfo(user, wallet);
+        return true;
 
     } catch (error) {
         const errorMsg = getCleanErrorMessage(error);
+        spinnerFail('gen', 'Generation failed');
+        spinnerFail('mint-init', 'Mint preparation failed');
+        spinnerFail('chain', 'On-chain mint failed');
+        spinnerFail('api-processing', 'Failed to set processing');
+        spinnerFail('api-confirm', 'Confirmation failed');
         console.error(`❌ ${errorMsg}`);
+        return false;
     }
 }
 
