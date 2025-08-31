@@ -3,7 +3,6 @@ import * as dotenv from 'dotenv';
 dotenv.config({ quiet: true });
 import axios from 'axios';
 import { Twisters } from 'twisters';
-import readline from 'readline';
 
 const twisters = new Twisters();
 
@@ -268,19 +267,6 @@ const updateUserInfo = async (user, wallet) => {
     }
 }
 
-const getUserInput = (question) => {
-    const rl = readline.createInterface({
-        input: process.stdin,
-        output: process.stdout
-    });
-
-    return new Promise((resolve) => {
-        rl.question(question, (answer) => {
-            rl.close();
-            resolve(answer.trim());
-        });
-    });
-}
 
 const handleImageGeneration = async (user, wallet) => {
     try {
