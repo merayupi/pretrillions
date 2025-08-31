@@ -2,9 +2,6 @@
 
 Automates image generation and NFT minting for PreTrillions using Node.js and Plasma testnet.
 
-- Entry point: [index.js](index.js)
-- Scripts: see [package.json](package.json)
-
 ## Requirements
 - Node.js 18+ (recommended)
 - pnpm or npm
