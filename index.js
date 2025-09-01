@@ -280,7 +280,7 @@ const handleImageGeneration = async (user, wallet) => {
 
         spinnerStart('chain', 'Minting on blockchain...');
         const mintResult = await mintNFT(wallet, mintData.metadataUri);
-        spinnerSucceed('chain', `Minted on-chain (tx: ${mintResult.hash.slice(0, 10)}...)`);
+        spinnerSucceed('chain', `Minted on-chain (tx: https://testnet.plasmascan.to/tx/${mintResult.hash})`);
 
         spinnerStart('api-processing', 'Setting status to processing...');
         await processingMint(mintData.mintId, 'processing', mintResult.hash);
